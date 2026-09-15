@@ -75,7 +75,13 @@ agent-sandbox add builtin://oauth
 ```sh
 # Usually you can just prompt your agent to configure it —
 # it fetches the agent-sandbox setup guides itself.
+
+# 1. Copy the oauth skill
+mkdir -p agent-home/.agents/skills
 cp -r materials/oauth agent-home/.agents/skills/
+
+# 2. Setup deepseek harness mcps
+cat materials/dsh-mcp-setup.yml >> agent-home/.dsh/profiles/web/cordis.patch.yml
 ```
 
 **Verify**
