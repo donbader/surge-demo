@@ -66,6 +66,8 @@ $ dsh web --no-open
 
 ## 6. Set up OAuth without leaking tokens
 
+After setting this up, future oauth mcps just need to configure on agent level.
+
 ```sh
 agent-sandbox add builtin://oauth
 ```
