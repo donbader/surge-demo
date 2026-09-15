@@ -1,0 +1,94 @@
+# yaml-language-server: $schema=./sandbox.schema.json
+version: 1
+name: surge-demo
+virtualization:
+  platform: docker
+services:
+  agent:
+    image: debian:stable-slim
+    command:
+      - sleep
+      - infinity
+    user:
+      name: agent
+      shell: zsh
+    env:
+      # from plugin: agent-dsh
+      GATEWAY_MANAGED_KEY: gateway-managed
+      # from plugin: github-pat
+      GH_TOKEN: gateway-managed
+  gateway:
+    egress:
+      - hosts:
+          - "*"
+    ingress:
+      tcp:
+        # from plugin: agent-dsh
+        - port: 3080
+          target: agent:3080
+scripts:
+  up:
+    - generate
+    - platform compose up --build -d
+  down:
+    - platform compose down
+  shell:
+    - platform compose exec -it -u {{services.agent.user.name}} agent
+      {{services.agent.user.shell}}
+  exec:
+    - platform compose exec agent {{args}}
+  logs:
+    - platform compose logs -f agent
+plugins:
+  - plugin: builtin://lang-nodejs
+    options:
+      version: "24"
+  - plugin: builtin://agent-dsh
+    options:
+      version: 0.1.5-rc.1
+  - plugin: builtin://shell
+  - plugin: builtin://agw
+    options:
+      api_key: ${AGW_LLM_GATEWAY_API_KEY}
+      vpn: builtin://vpn
+      profile: fazz
+  - plugin: builtin://github-pat
+    options:
+      github_pat_token: ${GITHUB_PAT}
+      deny_paths:
+        - PUT /repos/*/*/pulls/*/merge
+        - POST /user/repos
+        - POST /orgs/*/repos
+        - DELETE /repos/*/*
+        - PATCH /repos/*/*
+        - PUT /repos/*/*/collaborators/*
+        - POST /repos/*/*/hooks
+        - POST /repos/*/*/keys
+        - POST /user/keys
+        - POST /repos/*/*/transfer
+        - POST /repos/*/*/forks
+      deny_graphql:
+        mutations:
+          - mergePullRequest
+          - enablePullRequestAutoMerge
+          - createRepository
+          - deleteRepository
+          - updateRepository
+  - plugin: builtin://home-volume
+    options:
+      source: ./agent-home
+  - plugin: builtin://vpn
+    options:
+      profiles:
+        - name: fazz
+          type: openvpn
+          config_b64: ${FAZZ_VPN_CONFIG_B64}
+          username: ${FAZZ_VPN_USERNAME}
+          totp_secret: ${FAZZ_VPN_TOTP_SECRET}
+  - plugin: builtin://oauth
+    options:
+      providers:
+        notion:
+          server_url: https://mcp.notion.com/mcp
+        jira:
+          server_url: https://mcp.atlassian.com/v1/mcp

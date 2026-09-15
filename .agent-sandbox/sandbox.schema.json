@@ -1,0 +1,1521 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-sandbox.dev/schemas/sandbox.schema.json",
+  "title": "AgentSandboxConfig",
+  "additionalProperties": false,
+  "description": "Agent Sandbox configuration defining an isolated, policy-controlled environment for AI agents",
+  "type": "object",
+  "properties": {
+    "version": {
+      "description": "Schema version (must be 1)",
+      "const": 1,
+      "type": "number"
+    },
+    "name": {
+      "description": "Unique name for this sandbox (used in container names and network labels)",
+      "examples": [
+        "my-agent",
+        "dev-sandbox",
+        "prod-agent"
+      ],
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "type": "string"
+    },
+    "deploy_version": {
+      "description": "Optional version stamp injected as DEPLOY_VERSION env var in the agent container (e.g. git tag, CI build number)",
+      "examples": [
+        "v1.2.3",
+        "abc1234",
+        "2024.01.15-1"
+      ],
+      "type": "string"
+    },
+    "virtualization": {
+      "additionalProperties": false,
+      "description": "Virtualization platform configuration",
+      "type": "object",
+      "properties": {
+        "platform": {
+          "description": "Container runtime to use for the sandbox",
+          "examples": [
+            "docker",
+            "podman"
+          ],
+          "anyOf": [
+            {
+              "const": "docker",
+              "type": "string"
+            },
+            {
+              "const": "podman",
+              "type": "string"
+            }
+          ]
+        },
+        "subnet": {
+          "description": "Override the auto-derived /24 for the sandbox-internal network. Set only if the derived subnet collides with an existing Docker network on the host. CIDR form, e.g. 172.31.9.0/24.",
+          "pattern": "^(\\d{1,3}\\.){3}\\d{1,3}/\\d{1,2}$",
+          "examples": [
+            "172.31.9.0/24",
+            "10.99.0.0/24"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "platform"
+      ]
+    },
+    "secrets": {
+      "description": "Secret groups mapping logical names to environment variable references. Format: { groupName: { secretName: '${ENV_VAR}' } }",
+      "examples": [
+        {
+          "github": {
+            "token": "${GITHUB_TOKEN}"
+          },
+          "aws": {
+            "access_key": "${AWS_ACCESS_KEY_ID}",
+            "secret_key": "${AWS_SECRET_ACCESS_KEY}"
+          }
+        }
+      ],
+      "type": "object",
+      "patternProperties": {
+        "^(.*)$": {
+          "type": "object",
+          "patternProperties": {
+            "^(.*)$": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "services": {
+      "additionalProperties": false,
+      "description": "Service definitions for the sandbox containers",
+      "type": "object",
+      "properties": {
+        "agent": {
+          "additionalProperties": false,
+          "description": "Agent container configuration: the isolated environment where your AI agent runs",
+          "type": "object",
+          "properties": {
+            "image": {
+              "description": "Base Docker image for the agent container (e.g. 'ubuntu:24.04', 'node:20')",
+              "examples": [
+                "ubuntu:24.04",
+                "node:20-slim",
+                "python:3.12-slim",
+                "debian:bookworm"
+              ],
+              "type": "string"
+            },
+            "command": {
+              "description": "Override the container entrypoint command (e.g. ['sleep', 'infinity']). Mutually exclusive with command_script.",
+              "examples": [
+                [
+                  "sleep",
+                  "infinity"
+                ],
+                [
+                  "bash"
+                ],
+                [
+                  "tail",
+                  "-f",
+                  "/dev/null"
+                ]
+              ],
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "command_script": {
+              "description": "Path (relative to the config directory) to a user-authored shell script that becomes the agent process. The generator-owned entrypoint runs its security prologue (CA-trust, transparent-egress route) then execs this script as the non-root agent user, so it may use full shell control flow (loops, functions, heredocs). The script must start with a '#!' shebang. Mutually exclusive with command.",
+              "examples": [
+                "scripts/start.sh",
+                "bin/agent-run.sh"
+              ],
+              "type": "string"
+            },
+            "workdir": {
+              "description": "Working directory inside the container. Use absolute paths or ~/... for paths relative to user home.",
+              "examples": [
+                "/home/agent/workspace",
+                "/app",
+                "~/workspace"
+              ],
+              "pattern": "^(/|~/)",
+              "type": "string"
+            },
+            "env": {
+              "description": "Environment variables set in the agent container. Can reference secrets via ${SECRET_NAME} syntax.",
+              "examples": [
+                {
+                  "NODE_ENV": "development",
+                  "DEBUG": true
+                },
+                {
+                  "PYTHONUNBUFFERED": 1,
+                  "LOG_LEVEL": "debug"
+                }
+              ],
+              "type": "object",
+              "patternProperties": {
+                "^(.*)$": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "number"
+                    }
+                  ]
+                }
+              }
+            },
+            "build_steps": {
+              "description": "Dockerfile RUN commands executed as the non-root user during image build (e.g. 'npm install -g typescript')",
+              "examples": [
+                [
+                  "npm install -g typescript pnpm"
+                ],
+                [
+                  "pip install poetry",
+                  "poetry config virtualenvs.create false"
+                ],
+                [
+                  "cargo install ripgrep fd-find"
+                ]
+              ],
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "user": {
+              "additionalProperties": false,
+              "description": "Non-root user configuration. The agent always runs as this user for security isolation.",
+              "type": "object",
+              "properties": {
+                "name": {
+                  "description": "Username for the non-root user inside the agent container (created via useradd)",
+                  "examples": [
+                    "agent",
+                    "sandbox",
+                    "dev",
+                    "app"
+                  ],
+                  "pattern": "^[a-z_][a-z0-9_-]*$",
+                  "type": "string"
+                },
+                "elevated_commands": {
+                  "description": "Commands the user can run via sudo without password (NOPASSWD allowlist). Use 'ALL' with caution.",
+                  "examples": [
+                    [
+                      "apt-get",
+                      "apt"
+                    ],
+                    [
+                      "docker"
+                    ],
+                    [
+                      "systemctl restart myservice"
+                    ],
+                    [
+                      "ALL"
+                    ]
+                  ],
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "shell": {
+                  "description": "Login shell for the non-root agent user (default: bash). 'zsh'/'fish' are installed by the shell plugin (apt) and set via chsh; 'bash' ships in the base image.",
+                  "examples": [
+                    "bash",
+                    "zsh",
+                    "fish"
+                  ],
+                  "anyOf": [
+                    {
+                      "const": "bash",
+                      "type": "string"
+                    },
+                    {
+                      "const": "zsh",
+                      "type": "string"
+                    },
+                    {
+                      "const": "fish",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "name"
+              ]
+            }
+          },
+          "required": [
+            "image",
+            "user"
+          ]
+        },
+        "gateway": {
+          "additionalProperties": false,
+          "description": "Gateway service configuration: the MITM proxy controlling all agent network traffic",
+          "type": "object",
+          "properties": {
+            "egress": {
+              "description": "Outbound traffic rules. Requests not matching any rule are blocked (deny-by-default).",
+              "type": "array",
+              "items": {
+                "additionalProperties": false,
+                "description": "Egress rule controlling outbound HTTP/HTTPS traffic from the agent",
+                "type": "object",
+                "properties": {
+                  "hosts": {
+                    "description": "Hostnames or patterns to match (e.g. 'api.github.com', '*.amazonaws.com')",
+                    "examples": [
+                      [
+                        "api.github.com"
+                      ],
+                      [
+                        "*.amazonaws.com",
+                        "*.aws.amazon.com"
+                      ],
+                      [
+                        "registry.npmjs.org",
+                        "api.npms.io"
+                      ]
+                    ],
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "headers": {
+                    "description": "Headers to inject into matching requests (e.g. Authorization). Values can reference secrets via ${ENV_NAME} syntax.",
+                    "examples": [
+                      {
+                        "Authorization": "Bearer ${GITHUB_TOKEN}"
+                      },
+                      {
+                        "X-Api-Key": "${API_KEY}"
+                      }
+                    ],
+                    "type": "object",
+                    "patternProperties": {
+                      "^(.*)$": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "denied": {
+                    "description": "When true, blocks requests to these hosts instead of allowing them",
+                    "default": false,
+                    "type": "boolean"
+                  },
+                  "deny_paths": {
+                    "description": "URL path patterns to block on otherwise-allowed hosts (e.g. '/admin/*')",
+                    "examples": [
+                      [
+                        "/admin/*",
+                        "/api/v1/delete/*"
+                      ],
+                      [
+                        "/settings/delete"
+                      ]
+                    ],
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "deny_graphql": {
+                    "additionalProperties": false,
+                    "description": "GraphQL-specific restrictions enforced by the github-pat middleware",
+                    "type": "object",
+                    "properties": {
+                      "mutations": {
+                        "description": "GraphQL mutation names to block (e.g. 'deleteRepository')",
+                        "examples": [
+                          [
+                            "deleteRepository",
+                            "deleteUser"
+                          ],
+                          [
+                            "transferRepository",
+                            "archiveRepository"
+                          ]
+                        ],
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "github_pat_token": {
+                    "description": "Environment variable name (${ENV_NAME} format) containing the GitHub PAT for this rule. The gateway resolves it at runtime.",
+                    "examples": [
+                      "${GITHUB_TOKEN}",
+                      "${GH_PAT}"
+                    ],
+                    "pattern": "^\\$\\{[A-Z_][A-Z0-9_]*\\}$",
+                    "type": "string"
+                  },
+                  "middlewares": {
+                    "description": "Middleware chain to apply to matching requests (e.g. 'github-pat')",
+                    "examples": [
+                      [
+                        "github-pat"
+                      ]
+                    ],
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "via": {
+                    "additionalProperties": false,
+                    "description": "Route traffic through a connector (VPN, proxy) contributed by a plugin",
+                    "type": "object",
+                    "properties": {
+                      "plugin": {
+                        "description": "Plugin ID providing the connector (e.g. 'builtin://vpn' or bare 'vpn')",
+                        "examples": [
+                          "builtin://vpn",
+                          "vpn"
+                        ],
+                        "type": "string"
+                      },
+                      "profile": {
+                        "description": "Profile name within the plugin to use for routing",
+                        "examples": [
+                          "corporate",
+                          "stx",
+                          "default"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "plugin",
+                      "profile"
+                    ]
+                  }
+                },
+                "required": [
+                  "hosts"
+                ]
+              }
+            },
+            "ingress": {
+              "additionalProperties": false,
+              "description": "Inbound traffic configuration",
+              "type": "object",
+              "properties": {
+                "tcp": {
+                  "description": "TCP port forwarding rules for inbound connections",
+                  "type": "array",
+                  "items": {
+                    "additionalProperties": false,
+                    "description": "TCP port forwarding rule for inbound traffic to the sandbox",
+                    "type": "object",
+                    "properties": {
+                      "port": {
+                        "description": "Port number exposed on the gateway for inbound connections",
+                        "examples": [
+                          8080,
+                          3000,
+                          443,
+                          22
+                        ],
+                        "minimum": 1,
+                        "maximum": 65535,
+                        "type": "integer"
+                      },
+                      "target": {
+                        "description": "Target address inside the sandbox (e.g. 'agent:8080' forwards to agent container port 8080)",
+                        "examples": [
+                          "agent:8080",
+                          "agent:3000",
+                          "agent:22"
+                        ],
+                        "pattern": "^[a-z][a-z0-9-]*:[0-9]+$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "port",
+                      "target"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "required": [
+        "agent",
+        "gateway"
+      ]
+    },
+    "plugins": {
+      "description": "Plugins extending sandbox capabilities (base, SSH, VPN, etc.)",
+      "type": "array",
+      "items": {
+        "description": "Plugin reference with typed options per plugin",
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "plugin": {
+                "const": "builtin://agent-docker",
+                "description": "Policy-enforced Docker access for the agent via a docker-proxy sidecar (DooD)",
+                "type": "string"
+              },
+              "options": {
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "allowed_images": {
+                    "description": "Glob patterns for Docker images the agent may run, e.g. 'node:20-*', 'postgres:16-*'. A lone '*' allows ANY image (only the image gate is lifted — all other controls hold). Required; anything unmatched is denied 403.",
+                    "examples": [
+                      [
+                        "*"
+                      ]
+                    ],
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "max_containers": {
+                    "description": "Maximum concurrent containers (default: 5)",
+                    "type": "number"
+                  },
+                  "memory": {
+                    "description": "Memory limit per container, e.g. '2g' (default: '2g')",
+                    "type": "string"
+                  },
+                  "cpus": {
+                    "description": "CPU limit per container, e.g. '2' (default: '2')",
+                    "type": "string"
+                  },
+                  "pids": {
+                    "description": "Max PIDs per container (default: 256)",
+                    "type": "number"
+                  },
+                  "allow_compose": {
+                    "description": "Allow docker compose commands (default: false)",
+                    "type": "boolean"
+                  },
+                  "allow_build": {
+                    "description": "Allow docker build via buildkit sidecar (default: false)",
+                    "type": "boolean"
+                  },
+                  "localhost_port_forward": {
+                    "description": "Reserved: auto-forward container ports to agent localhost. NOT YET WIRED under the v2 build-step policy (accepted but a no-op); spawned containers remain reachable by name on sandbox-internal (default: false)",
+                    "type": "boolean"
+                  },
+                  "allowed_capabilities": {
+                    "description": "Linux capabilities to allow on spawned containers, e.g. 'NET_ADMIN' (default: none — all cap_add blocked)",
+                    "examples": [
+                      []
+                    ],
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "allowed_images"
+                ],
+                "title": "agent-docker options",
+                "description": "Configuration options for agent-docker plugin. Required: allowed_images. Optional: max_containers, memory, cpus, pids, allow_compose, allow_build, localhost_port_forward, allowed_capabilities.",
+                "examples": [
+                  {
+                    "allowed_images": [
+                      "*"
+                    ],
+                    "max_containers": 5,
+                    "memory": "2g",
+                    "cpus": "2",
+                    "pids": 256,
+                    "allow_compose": false,
+                    "allow_build": false,
+                    "localhost_port_forward": false,
+                    "allowed_capabilities": []
+                  }
+                ]
+              }
+            },
+            "required": [
+              "plugin"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "plugin": {
+                "const": "builtin://agw",
+                "description": "Gateway egress rules and header/credential injection",
+                "type": "string"
+              },
+              "options": {
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "api_key": {
+                    "description": "Env-NAME ref for the gateway LLM API key, e.g. '${AGW_LLM_GATEWAY_API_KEY}'. Must be a ${NAME} ref (never a literal key); the gateway resolves it from its own .env at forward time.",
+                    "examples": [
+                      "${AGW_LLM_GATEWAY_API_KEY}"
+                    ],
+                    "type": "string"
+                  },
+                  "vpn": {
+                    "description": "Optional: route gateway egress through a connector plugin (e.g. `builtin://vpn`). Must be set together with `profile`.",
+                    "type": "string"
+                  },
+                  "profile": {
+                    "description": "Optional: the profile/connector name within `vpn` to route through (e.g. a vpn profile name). Must be set together with `vpn`.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "api_key"
+                ],
+                "title": "agw options",
+                "description": "Configuration options for agw plugin. Required: api_key. Optional: vpn, profile.",
+                "examples": [
+                  {
+                    "api_key": "${AGW_LLM_GATEWAY_API_KEY}",
+                    "vpn": "...",
+                    "profile": "..."
+                  }
+                ]
+              }
+            },
+            "required": [
+              "plugin"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "plugin": {
+                "const": "builtin://github-pat",
+                "description": "GitHub PAT auth via the builtin://github-pat gateway middleware, with path and GraphQL-mutation denial",
+                "type": "string"
+              },
+              "options": {
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "github_pat_token": {
+                    "description": "Environment variable reference to the PAT, e.g. '${GITHUB_PAT}' (required)",
+                    "type": "string"
+                  },
+                  "github_packages": {
+                    "description": "Also allow egress to the GitHub Packages registry (npm.pkg.github.com) with a Bearer PAT header. Default false.",
+                    "type": "boolean"
+                  },
+                  "deny_paths": {
+                    "description": "GitHub REST requests to block, each 'METHOD /path' where '*' matches exactly one path segment (e.g. 'DELETE /repos/*/*'). Matched against api.github.com bare paths by the builtin://github-pat middleware.",
+                    "examples": [
+                      [
+                        "PUT /repos/*/*/pulls/*/merge",
+                        "POST /user/repos",
+                        "POST /orgs/*/repos",
+                        "DELETE /repos/*/*",
+                        "PATCH /repos/*/*",
+                        "PUT /repos/*/*/collaborators/*",
+                        "POST /repos/*/*/hooks",
+                        "POST /repos/*/*/keys",
+                        "POST /user/keys",
+                        "POST /repos/*/*/transfer",
+                        "POST /repos/*/*/forks"
+                      ]
+                    ],
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "deny_graphql": {
+                    "additionalProperties": false,
+                    "description": "GraphQL mutation denylist enforced on POST /graphql (word-boundary match on the request body / X-Github-Graphql-Operation header).",
+                    "examples": [
+                      {
+                        "mutations": [
+                          "mergePullRequest",
+                          "enablePullRequestAutoMerge",
+                          "createRepository",
+                          "deleteRepository",
+                          "updateRepository"
+                        ]
+                      }
+                    ],
+                    "type": "object",
+                    "properties": {
+                      "mutations": {
+                        "description": "GraphQL mutation names to block",
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                },
+                "required": [
+                  "github_pat_token"
+                ],
+                "title": "github-pat options",
+                "description": "Configuration options for github-pat plugin. Required: github_pat_token. Optional: github_packages, deny_paths, deny_graphql.",
+                "examples": [
+                  {
+                    "github_pat_token": "${GITHUB_PAT}",
+                    "github_packages": false,
+                    "deny_paths": [
+                      "PUT /repos/*/*/pulls/*/merge",
+                      "POST /user/repos",
+                      "POST /orgs/*/repos",
+                      "DELETE /repos/*/*",
+                      "PATCH /repos/*/*",
+                      "PUT /repos/*/*/collaborators/*",
+                      "POST /repos/*/*/hooks",
+                      "POST /repos/*/*/keys",
+                      "POST /user/keys",
+                      "POST /repos/*/*/transfer",
+                      "POST /repos/*/*/forks"
+                    ],
+                    "deny_graphql": {
+                      "mutations": [
+                        "mergePullRequest",
+                        "enablePullRequestAutoMerge",
+                        "createRepository",
+                        "deleteRepository",
+                        "updateRepository"
+                      ]
+                    }
+                  }
+                ]
+              }
+            },
+            "required": [
+              "plugin"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "plugin": {
+                "const": "builtin://oauth",
+                "description": "OAuth bearer-token egress injection for configured API providers via the gateway oauth2-refresh-token credential injector (background token refresh, fail-closed)",
+                "type": "string"
+              },
+              "options": {
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "providers": {
+                    "description": "Map of provider name -> provider config (the name is the injector purpose). Login-only providers need just server_url (endpoints + client are resolved via discovery); egress-injector providers also set host, token_url and the ${ENV} client/refresh refs.",
+                    "examples": [
+                      {
+                        "notion": {
+                          "server_url": "https://mcp.notion.com/mcp"
+                        },
+                        "jira": {
+                          "server_url": "https://mcp.atlassian.com/v1/mcp"
+                        }
+                      }
+                    ],
+                    "type": "object",
+                    "patternProperties": {
+                      "^(.*)$": {
+                        "additionalProperties": false,
+                        "type": "object",
+                        "properties": {
+                          "server_url": {
+                            "description": "Protected-resource server URL (e.g. 'https://api.notion.com')",
+                            "type": "string"
+                          },
+                          "client_id": {
+                            "description": "OAuth client id (env-name ref '${NAME}' or literal id)",
+                            "type": "string"
+                          },
+                          "client_secret": {
+                            "description": "OAuth client secret env-name ref (e.g. '${X_CLIENT_SECRET}')",
+                            "type": "string"
+                          },
+                          "authorize_endpoint": {
+                            "description": "Authorization endpoint URL (must be https)",
+                            "type": "string"
+                          },
+                          "token_endpoint": {
+                            "description": "Token endpoint URL",
+                            "type": "string"
+                          },
+                          "scopes": {
+                            "description": "Space-delimited OAuth scopes (e.g. 'read write')",
+                            "type": "string"
+                          },
+                          "skip_resource": {
+                            "description": "Suppress the RFC-8707 resource param even when server_url is set",
+                            "type": "boolean"
+                          },
+                          "callback_url": {
+                            "description": "Override the derived OAuth callback URL for this provider",
+                            "type": "string"
+                          },
+                          "revocation_endpoint": {
+                            "description": "RFC 7009 token revocation endpoint (https, same-origin as server_url)",
+                            "type": "string"
+                          },
+                          "discovery_allowlist": {
+                            "description": "Extra SSRF-allowlisted origins the discovery/DCR gate may POST to (e.g. ['https://dcr.notion.com']); default is same-origin as server_url only",
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "host": {
+                            "description": "Exact egress host the injected bearer binds to (e.g. 'api.stripe.com')",
+                            "type": "string"
+                          },
+                          "token_url": {
+                            "description": "Token endpoint used by the background refresh (injector path)",
+                            "type": "string"
+                          },
+                          "refresh_token": {
+                            "description": "Refresh-token env-name ref seed for the background injector",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "server_url"
+                        ]
+                      }
+                    }
+                  },
+                  "callback_url": {
+                    "description": "Global OAuth callback URL used when a provider sets none",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "providers"
+                ],
+                "title": "oauth options",
+                "description": "Configuration options for oauth plugin. Required: providers. Optional: callback_url.",
+                "examples": [
+                  {
+                    "providers": {
+                      "notion": {
+                        "server_url": "https://mcp.notion.com/mcp"
+                      },
+                      "jira": {
+                        "server_url": "https://mcp.atlassian.com/v1/mcp"
+                      }
+                    },
+                    "callback_url": "..."
+                  }
+                ]
+              }
+            },
+            "required": [
+              "plugin"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "plugin": {
+                "const": "builtin://home-volume",
+                "description": "Seed a folder into a persistent named home volume, resetting managed subtrees on each start",
+                "type": "string"
+              },
+              "options": {
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "source": {
+                    "description": "Project-relative folder to seed into the agent home (e.g. './home-seed' or 'agent-home/')",
+                    "type": "string"
+                  },
+                  "exclude": {
+                    "description": "Glob patterns to exclude from the seed (e.g. '*.log', 'node_modules/')",
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "mirrorPaths": {
+                    "description": "Home-relative subtrees made to EXACTLY match the seed on every start (overwrite + delete home-only drift), e.g. '.claude/skills'",
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "source"
+                ],
+                "title": "home-volume options",
+                "description": "Configuration options for home-volume plugin. Required: source. Optional: exclude, mirrorPaths.",
+                "examples": [
+                  {
+                    "source": "./home-seed",
+                    "exclude": [
+                      "*.log",
+                      "node_modules/"
+                    ],
+                    "mirrorPaths": [
+                      ".claude/skills"
+                    ]
+                  }
+                ]
+              }
+            },
+            "required": [
+              "plugin"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "plugin": {
+                "const": "builtin://ssh",
+                "description": "SSH server inside the agent container for remote dev access (key-only, no tunneling)",
+                "type": "string"
+              },
+              "options": {
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "port": {
+                    "minimum": 1,
+                    "maximum": 65535,
+                    "description": "SSH server port (default: 2222)",
+                    "type": "integer"
+                  },
+                  "authorized_keys": {
+                    "minItems": 1,
+                    "description": "Client SSH public keys allowed to connect (e.g. 'ssh-ed25519 AAAA... user@host')",
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "authorized_keys"
+                ],
+                "title": "ssh options",
+                "description": "Configuration options for ssh plugin. Required: authorized_keys. Optional: port.",
+                "examples": [
+                  {
+                    "port": 2222,
+                    "authorized_keys": [
+                      "ssh-ed25519 AAAA... user@host"
+                    ]
+                  }
+                ]
+              }
+            },
+            "required": [
+              "plugin"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "plugin": {
+                "const": "builtin://vpn",
+                "description": "VPN connector sidecars (tailscale or openvpn) configured via profiles",
+                "type": "string"
+              },
+              "options": {
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "profiles": {
+                    "description": "VPN connector profiles. Each needs: name, type (tailscale|openvpn), and type-specific fields. Tailscale: ts_auth_key (e.g. '${TS_AUTH_KEY}'). OpenVPN: config_b64, username, password.",
+                    "examples": [
+                      [
+                        {
+                          "name": "fazz",
+                          "type": "openvpn",
+                          "config_b64": "${FAZZ_VPN_CONFIG_B64}",
+                          "username": "${FAZZ_VPN_USERNAME}",
+                          "totp_secret": "${FAZZ_VPN_TOTP_SECRET}"
+                        },
+                        {
+                          "name": "my_tailscale",
+                          "type": "tailscale",
+                          "ts_auth_key": "${MY_TAILSCALE_AUTHKEY}"
+                        }
+                      ]
+                    ],
+                    "type": "array",
+                    "items": {
+                      "additionalProperties": true,
+                      "type": "object",
+                      "properties": {}
+                    }
+                  }
+                },
+                "title": "vpn options",
+                "description": "Configuration options for vpn plugin. Optional: profiles.",
+                "examples": [
+                  {
+                    "profiles": [
+                      {
+                        "name": "fazz",
+                        "type": "openvpn",
+                        "config_b64": "${FAZZ_VPN_CONFIG_B64}",
+                        "username": "${FAZZ_VPN_USERNAME}",
+                        "totp_secret": "${FAZZ_VPN_TOTP_SECRET}"
+                      },
+                      {
+                        "name": "my_tailscale",
+                        "type": "tailscale",
+                        "ts_auth_key": "${MY_TAILSCALE_AUTHKEY}"
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            "required": [
+              "plugin"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "plugin": {
+                "const": "builtin://host-docker-network-bridge",
+                "description": "Access containers on external Docker networks by name (e.g. reach a database container)",
+                "type": "string"
+              },
+              "options": {
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "profiles": {
+                    "description": "Bridge profiles to reach containers on external Docker networks. Each needs: name, target (container name), network (Docker network to join).",
+                    "examples": [
+                      [
+                        {
+                          "name": "my-service",
+                          "target": "backend-api",
+                          "network": "my-app-network"
+                        }
+                      ]
+                    ],
+                    "type": "array",
+                    "items": {
+                      "additionalProperties": true,
+                      "type": "object",
+                      "properties": {}
+                    }
+                  }
+                },
+                "title": "host-docker-network-bridge options",
+                "description": "Configuration options for host-docker-network-bridge plugin. Optional: profiles.",
+                "examples": [
+                  {
+                    "profiles": [
+                      {
+                        "name": "my-service",
+                        "target": "backend-api",
+                        "network": "my-app-network"
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            "required": [
+              "plugin"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "plugin": {
+                "const": "builtin://sync-back",
+                "description": "Archive selected agent-home paths to a host directory before compose down and restore the latest archive after compose up (Tier-3 host-lifecycle, builtin-only)",
+                "type": "string"
+              },
+              "options": {
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "paths": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "local_directory": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "paths",
+                  "local_directory"
+                ],
+                "title": "sync-back options",
+                "description": "Configuration options for sync-back plugin. Required: paths, local_directory.",
+                "examples": [
+                  {
+                    "paths": [
+                      "..."
+                    ],
+                    "local_directory": "..."
+                  }
+                ]
+              }
+            },
+            "required": [
+              "plugin"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "plugin": {
+                "const": "builtin://base",
+                "description": "Base developer toolchain (git, curl, ca-certificates, gh) as root build steps",
+                "type": "string"
+              },
+              "options": {
+                "type": "object",
+                "additionalProperties": false,
+                "title": "base options",
+                "description": "No options required for base plugin."
+              }
+            },
+            "required": [
+              "plugin"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "plugin": {
+                "const": "builtin://shell",
+                "description": "Install and chsh the agent user's login shell (zsh/fish) as root build steps",
+                "type": "string"
+              },
+              "options": {
+                "type": "object",
+                "additionalProperties": false,
+                "title": "shell options",
+                "description": "No options required for shell plugin."
+              }
+            },
+            "required": [
+              "plugin"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "plugin": {
+                "const": "builtin://lang-nodejs",
+                "description": "Install the Node.js runtime (pinned default major or a version override) as a root build step",
+                "type": "string"
+              },
+              "options": {
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "version": {
+                    "description": "Toolchain version to install (e.g. \"24\"). Omitted => the pinned default.",
+                    "examples": [
+                      "24"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "title": "lang-nodejs options",
+                "description": "Configuration options for lang-nodejs plugin. Optional: version.",
+                "examples": [
+                  {
+                    "version": "24"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "plugin"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "plugin": {
+                "const": "builtin://lang-go",
+                "description": "Install the Go toolchain (pinned+checksum, or a version override) as a root build step",
+                "type": "string"
+              },
+              "options": {
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "version": {
+                    "description": "Toolchain version to install (e.g. \"1.27.1\"). Omitted => the pinned default.",
+                    "examples": [
+                      "1.27.1"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "title": "lang-go options",
+                "description": "Configuration options for lang-go plugin. Optional: version.",
+                "examples": [
+                  {
+                    "version": "1.27.1"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "plugin"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "plugin": {
+                "const": "builtin://lang-python3",
+                "description": "Install distro python3 (python3, venv, pip) via apt as a root build step",
+                "type": "string"
+              },
+              "options": {
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "version": {
+                    "description": "Toolchain version to install (e.g. \"3.12\"). Omitted => the pinned default. NOTE: informational only — the distro installs its own python3; this value does not change the installed runtime.",
+                    "examples": [
+                      "3.12"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "title": "lang-python3 options",
+                "description": "Configuration options for lang-python3 plugin. Optional: version.",
+                "examples": [
+                  {
+                    "version": "3.12"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "plugin"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "plugin": {
+                "const": "builtin://lang-ruby",
+                "description": "Install distro ruby-full via apt as a root build step",
+                "type": "string"
+              },
+              "options": {
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "version": {
+                    "description": "Toolchain version to install (e.g. \"3.4\"). Omitted => the pinned default. NOTE: informational only — the distro installs its own ruby; this value does not change the installed runtime.",
+                    "examples": [
+                      "3.4"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "title": "lang-ruby options",
+                "description": "Configuration options for lang-ruby plugin. Optional: version.",
+                "examples": [
+                  {
+                    "version": "3.4"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "plugin"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "plugin": {
+                "const": "builtin://agent-claude-code",
+                "description": "Install the Anthropic Claude Code CLI and seed its gateway HOME config",
+                "type": "string"
+              },
+              "options": {
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "version": {
+                    "description": "npm version to install (a semver like \"1.2.3\" or a prerelease \"1.2.3-rc.1\"). Omitted => the pinned default. npm validates existence at build.",
+                    "examples": [
+                      "2.1.267"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "title": "agent-claude-code options",
+                "description": "Configuration options for agent-claude-code plugin. Optional: version.",
+                "examples": [
+                  {
+                    "version": "2.1.267"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "plugin"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "plugin": {
+                "const": "builtin://agent-codex",
+                "description": "Install the OpenAI Codex CLI and seed its gateway HOME config",
+                "type": "string"
+              },
+              "options": {
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "version": {
+                    "description": "npm version to install (a semver like \"1.2.3\" or a prerelease \"1.2.3-rc.1\"). Omitted => the pinned default. npm validates existence at build.",
+                    "examples": [
+                      "0.154.0"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "title": "agent-codex options",
+                "description": "Configuration options for agent-codex plugin. Optional: version.",
+                "examples": [
+                  {
+                    "version": "0.154.0"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "plugin"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "plugin": {
+                "const": "builtin://agent-pi",
+                "description": "Install the pi coding agent CLI and seed its gateway HOME config",
+                "type": "string"
+              },
+              "options": {
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "version": {
+                    "description": "npm version to install (a semver like \"1.2.3\" or a prerelease \"1.2.3-rc.1\"). Omitted => the pinned default. npm validates existence at build.",
+                    "examples": [
+                      "0.85.1"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "title": "agent-pi options",
+                "description": "Configuration options for agent-pi plugin. Optional: version.",
+                "examples": [
+                  {
+                    "version": "0.85.1"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "plugin"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "plugin": {
+                "const": "builtin://agent-dsh",
+                "description": "Install the DeepSeek Harness CLI and seed its gateway HOME config + web ingress",
+                "type": "string"
+              },
+              "options": {
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "version": {
+                    "description": "npm version to install (a semver like \"1.2.3\" or a prerelease \"1.2.3-rc.1\"). Omitted => the pinned default. npm validates existence at build.",
+                    "examples": [
+                      "0.1.5-rc.1"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "title": "agent-dsh options",
+                "description": "Configuration options for agent-dsh plugin. Optional: version.",
+                "examples": [
+                  {
+                    "version": "0.1.5-rc.1"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "plugin"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "plugin": {
+                "const": "builtin://agent-deepsec",
+                "description": "Install the deepsec vulnerability scanner CLI and seed its gateway (agw) model route",
+                "type": "string"
+              },
+              "options": {
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "version": {
+                    "description": "npm version of the deepsec CLI to install (a semver like \"1.2.3\" or a prerelease \"1.2.3-rc.1\"). Omitted => the pinned default. npm validates existence at build.",
+                    "examples": [
+                      "2.3.9"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "title": "agent-deepsec options",
+                "description": "Configuration options for agent-deepsec plugin. Optional: version.",
+                "examples": [
+                  {
+                    "version": "2.3.9"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "plugin"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "plugin": {
+                "type": "string",
+                "pattern": "^local://",
+                "description": "Local plugin path (e.g. 'local://./my-plugin')",
+                "examples": [
+                  "local://./my-plugin"
+                ]
+              },
+              "options": {
+                "type": "object",
+                "description": "Plugin-specific configuration options"
+              }
+            },
+            "required": [
+              "plugin"
+            ]
+          }
+        ],
+        "discriminator": {
+          "propertyName": "plugin"
+        }
+      }
+    },
+    "scripts": {
+      "description": "Named scripts for `agent-sandbox run <name>`. Each script is an array of steps. Steps can be 'generate' or 'platform <args>' (runs docker/podman). Use {{path.to.config}} for config values, and {{args}} to forward trailing CLI args (e.g. `agent-sandbox run exec ps aux`).",
+      "examples": [
+        {
+          "up": [
+            "generate",
+            "platform compose up --build -d"
+          ],
+          "down": [
+            "platform compose down"
+          ],
+          "shell": [
+            "platform compose exec -it -u {{services.agent.user.name}} agent {{services.agent.user.shell}}"
+          ],
+          "exec": [
+            "platform compose exec agent {{args}}"
+          ],
+          "logs": [
+            "platform compose logs -f agent"
+          ]
+        }
+      ],
+      "type": "object",
+      "patternProperties": {
+        "^(.*)$": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "required": [
+    "version",
+    "name",
+    "virtualization",
+    "services"
+  ]
+}

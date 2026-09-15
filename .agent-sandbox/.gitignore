@@ -1,0 +1,11 @@
+# Everything under .agent-sandbox/ is derived and reproduced by
+# `agent-sandbox generate` (or a local secret) — ignore by default.
+*
+
+# Kept in version control: authored/scaffolded source-of-truth inputs.
+!config.yaml
+!sandbox.schema.json
+!.env.example
+!AGENTS.md
+!CLAUDE.md
+!.gitignore

@@ -1,0 +1,21 @@
+- id: webserver
+  config:
+    host: 0.0.0.0
+    port: 3080
+- insert:
+    - id: mcp-notion
+      name: "@deepseek-ai/dsh-mcp-client"
+      config:
+        serverName: notion
+        transport: streamable-http
+        url: https://mcp.notion.com/mcp
+        headers:
+          Authorization: "Bearer gateway-injected"
+    - id: mcp-jira
+      name: "@deepseek-ai/dsh-mcp-client"
+      config:
+        serverName: jira
+        transport: streamable-http
+        url: https://mcp.atlassian.com/v1/mcp
+        headers:
+          Authorization: "Bearer gateway-injected"
