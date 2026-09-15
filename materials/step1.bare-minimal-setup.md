@@ -45,3 +45,11 @@ cp -r materials/oauth agent-home/.agents/skills/
 
 - [ ] agent can access notion page content
 - [ ] agent can access jira ticket content
+
+# 6. Feel frustrated about vpn get disconnected while agent running?
+
+```sh
+agent-sandbox add builtin://vpn
+
+# Then wire up vpn for agw plugin
+```
