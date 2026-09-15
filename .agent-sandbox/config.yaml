@@ -50,8 +50,6 @@ plugins:
   - plugin: builtin://agw
     options:
       api_key: ${AGW_LLM_GATEWAY_API_KEY}
-      vpn: builtin://vpn
-      profile: fazz
   - plugin: builtin://github-pat
     options:
       github_pat_token: ${GITHUB_PAT}
@@ -77,14 +75,6 @@ plugins:
   - plugin: builtin://home-volume
     options:
       source: ./agent-home
-  - plugin: builtin://vpn
-    options:
-      profiles:
-        - name: fazz
-          type: openvpn
-          config_b64: ${FAZZ_VPN_CONFIG_B64}
-          username: ${FAZZ_VPN_USERNAME}
-          totp_secret: ${FAZZ_VPN_TOTP_SECRET}
   - plugin: builtin://oauth
     options:
       providers:
