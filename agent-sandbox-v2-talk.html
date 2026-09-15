@@ -1,0 +1,1879 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>agent-sandbox v2 — Use agents safely and freely</title>
+
+    <!-- Fonts: Fontshare (Clash Display + Space Grotesk) + JetBrains Mono for code accents -->
+    <link rel="preconnect" href="https://api.fontshare.com">
+    <link rel="stylesheet"
+        href="https://api.fontshare.com/v2/css?f[]=clash-display@600,700&f[]=space-grotesk@400,500,600&display=swap">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap">
+
+    <style>
+        /* ===========================================
+   CSS CUSTOM PROPERTIES (THEME)
+   Dark-tech "secure containment" aesthetic:
+   deep ink base, cyan signal, violet secret,
+   danger red for the honest bits.
+   =========================================== */
+        :root {
+            --stage-bg: #05070d;
+            --slide-bg: #0a0e17;
+            --ink: #0a0e17;
+            --ink-2: #10151f;
+            --panel: #121826;
+            --line: #1e2636;
+            --text: #e8edf6;
+            --text-2: #c2ccdc;
+            /* load-bearing body text — brighter than dim */
+            --text-dim: #8792a6;
+            --cyan: #35e0d0;
+            /* signal / gateway / shipped */
+            --cyan-glow: rgba(53, 224, 208, 0.35);
+            --violet: #b98cff;
+            /* secret / vision */
+            --violet-glow: rgba(185, 140, 255, 0.30);
+            --amber: #ffcf5c;
+            /* pill / attention */
+            --red: #ff6b6b;
+            /* honest / roadmap / danger */
+            --green: #6ee7a8;
+            /* shipped affirmations */
+
+            --font-display: 'Clash Display', sans-serif;
+            --font-body: 'Space Grotesk', sans-serif;
+            --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+            --pad: 96px;
+            --ease: cubic-bezier(0.16, 1, 0.3, 1);
+            --dur: 0.7s;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        /* ===========================================
+   FIXED 16:9 STAGE — from viewport-base.css (full)
+   =========================================== */
+        html,
+        body {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            overflow: hidden;
+            background: var(--stage-bg, #000);
+        }
+
+        .deck-viewport {
+            position: fixed;
+            inset: 0;
+            overflow: hidden;
+            background: var(--stage-bg, #000);
+        }
+
+        .deck-stage {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 1920px;
+            height: 1080px;
+            overflow: hidden;
+            transform-origin: 0 0;
+            background: var(--slide-bg, #fff);
+        }
+
+        .slide {
+            position: absolute;
+            inset: 0;
+            width: 1920px;
+            height: 1080px;
+            overflow: hidden;
+            display: block;
+            visibility: hidden;
+            opacity: 0;
+            pointer-events: none;
+            background: var(--slide-bg, #fff);
+        }
+
+        .slide.active,
+        .slide.visible {
+            visibility: visible;
+            opacity: 1;
+            pointer-events: auto;
+            z-index: 1;
+        }
+
+        img,
+        video,
+        canvas,
+        svg {
+            max-width: 100%;
+            max-height: 100%;
+        }
+
+        .deck-controls {
+            position: fixed;
+            left: 50%;
+            bottom: 22px;
+            transform: translateX(-50%);
+            z-index: 1000;
+        }
+
+        @media print {
+
+            html,
+            body {
+                width: 1920px;
+                height: auto;
+                overflow: visible;
+                background: #fff;
+            }
+
+            .deck-viewport {
+                position: static;
+                overflow: visible;
+                background: #fff;
+            }
+
+            .deck-stage {
+                position: static;
+                width: auto;
+                height: auto;
+                transform: none !important;
+                background: none;
+            }
+
+            .slide {
+                position: relative;
+                display: block !important;
+                visibility: visible !important;
+                opacity: 1 !important;
+                pointer-events: auto !important;
+                width: 1920px;
+                height: 1080px;
+                break-after: page;
+                page-break-after: always;
+            }
+
+            .slide:last-child {
+                break-after: auto;
+                page-break-after: auto;
+            }
+
+            .deck-controls {
+                display: none !important;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+
+            *,
+            *::before,
+            *::after {
+                animation-duration: 0.01ms !important;
+                transition-duration: 0.2s !important;
+            }
+        }
+
+        /* ===========================================
+   ATMOSPHERE — every slide sits on a grid + glow field
+   =========================================== */
+        .slide {
+            font-family: var(--font-body);
+            color: var(--text);
+            padding: var(--pad);
+            background:
+                radial-gradient(1200px 700px at 82% 12%, var(--violet-glow), transparent 60%),
+                radial-gradient(1100px 800px at 12% 92%, var(--cyan-glow), transparent 62%),
+                var(--slide-bg);
+        }
+
+        .slide::before {
+            /* structural grid */
+            content: "";
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            background-image:
+                linear-gradient(rgba(255, 255, 255, 0.028) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 255, 255, 0.028) 1px, transparent 1px);
+            background-size: 64px 64px;
+            mask-image: radial-gradient(ellipse at 50% 45%, #000 55%, transparent 100%);
+        }
+
+        .slide::after {
+            /* fine scanline vignette for containment feel */
+            content: "";
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            box-shadow: inset 0 0 240px rgba(0, 0, 0, 0.6);
+        }
+
+        .layer {
+            position: relative;
+            z-index: 2;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* corner ticker — "secure enclosure" chrome */
+        .kicker {
+            font-family: var(--font-mono);
+            font-size: 20px;
+            letter-spacing: 0.28em;
+            text-transform: uppercase;
+            color: var(--cyan);
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .kicker .dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--cyan);
+            box-shadow: 0 0 14px var(--cyan);
+        }
+
+        .slide-num {
+            position: absolute;
+            right: var(--pad);
+            bottom: 56px;
+            z-index: 3;
+            font-family: var(--font-mono);
+            font-size: 20px;
+            color: var(--text-dim);
+            letter-spacing: 0.18em;
+        }
+
+        .brandmark {
+            position: absolute;
+            left: var(--pad);
+            bottom: 56px;
+            z-index: 3;
+            font-family: var(--font-mono);
+            font-size: 20px;
+            color: var(--text-dim);
+            letter-spacing: 0.14em;
+        }
+
+        /* ===========================================
+   TYPOGRAPHY
+   =========================================== */
+        h1 {
+            font-family: var(--font-display);
+            font-weight: 700;
+            color: #fff;
+            line-height: 1.02;
+            letter-spacing: -0.015em;
+        }
+
+        h2 {
+            font-family: var(--font-display);
+            font-weight: 600;
+            font-size: 78px;
+            line-height: 1.05;
+            letter-spacing: -0.01em;
+            color: #fff;
+        }
+
+        h3 {
+            font-family: var(--font-display);
+            font-weight: 600;
+            font-size: 34px;
+            color: var(--cyan);
+        }
+
+        p {
+            font-size: 32px;
+            line-height: 1.5;
+            color: var(--text);
+        }
+
+        .dim {
+            color: var(--text-2);
+        }
+
+        .chrome {
+            color: var(--text-dim);
+        }
+
+        .cy {
+            color: var(--cyan);
+        }
+
+        .vi {
+            color: var(--violet);
+        }
+
+        .cyan {
+            color: var(--cyan);
+        }
+
+        .violet {
+            color: var(--violet);
+        }
+
+        .red {
+            color: var(--red);
+        }
+
+        .green {
+            color: var(--green);
+        }
+
+        strong {
+            color: #fff;
+            font-weight: 600;
+        }
+
+        code,
+        .mono {
+            font-family: var(--font-mono);
+        }
+
+        code {
+            background: #0f1522;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 0.06em 0.4em;
+            color: var(--cyan);
+            font-size: 0.86em;
+        }
+
+        /* content helpers */
+        .title-block h2 {
+            margin-bottom: 34px;
+        }
+
+        .lead-in {
+            font-size: 26px;
+            letter-spacing: 0.06em;
+        }
+
+        .center {
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+        }
+
+        .spacer {
+            flex: 1;
+        }
+
+        .mt-s {
+            margin-top: 20px;
+        }
+
+        .mt-m {
+            margin-top: 40px;
+        }
+
+        .mt-l {
+            margin-top: 60px;
+        }
+
+        ul.big {
+            list-style: none;
+            margin-top: 40px;
+        }
+
+        ul.big li {
+            position: relative;
+            padding-left: 52px;
+            font-size: 34px;
+            line-height: 1.42;
+            margin: 26px 0;
+            color: var(--text);
+        }
+
+        ul.big li::before {
+            content: "›";
+            position: absolute;
+            left: 0;
+            top: -2px;
+            color: var(--cyan);
+            font-family: var(--font-mono);
+            font-size: 40px;
+            line-height: 1;
+        }
+
+        .pill {
+            display: inline-block;
+            font-family: var(--font-mono);
+            font-size: 22px;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            padding: 8px 22px;
+            border-radius: 999px;
+            border: 1px solid var(--cyan);
+            color: var(--cyan);
+            background: rgba(53, 224, 208, 0.08);
+        }
+
+        .pill.violet {
+            border-color: var(--violet);
+            color: var(--violet);
+            background: rgba(185, 140, 255, 0.08);
+        }
+
+        /* two-column layout */
+        .cols {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 44px;
+            margin-top: 44px;
+        }
+
+        .card {
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.008));
+            border: 1px solid var(--line);
+            border-radius: 22px;
+            padding: 44px 46px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card::after {
+            content: "";
+            position: absolute;
+            left: 0;
+            top: 0;
+            height: 4px;
+            width: 100%;
+            background: linear-gradient(90deg, var(--cyan), transparent);
+        }
+
+        .card.violet::after {
+            background: linear-gradient(90deg, var(--violet), transparent);
+        }
+
+        .card h3 {
+            margin-bottom: 16px;
+            font-size: 40px;
+        }
+
+        .card p {
+            font-size: 27px;
+            line-height: 1.42;
+            color: var(--text-2);
+        }
+
+        .card .tag {
+            font-family: var(--font-mono);
+            font-size: 22px;
+            margin-top: 22px;
+            display: block;
+        }
+
+        /* code block */
+        pre {
+            background: #0c111c;
+            border: 1px solid var(--line);
+            border-radius: 18px;
+            padding: 40px 44px;
+            font-family: var(--font-mono);
+            font-size: 27px;
+            line-height: 1.85;
+            color: var(--text);
+            overflow: hidden;
+            box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45);
+        }
+
+        pre .cmt {
+            color: #5f6b82;
+        }
+
+        pre .cy {
+            color: var(--cyan);
+        }
+
+        pre .vi {
+            color: var(--violet);
+        }
+
+        /* table */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 38px;
+            font-size: 24px;
+        }
+
+        th,
+        td {
+            text-align: left;
+            padding: 18px 20px;
+            border-bottom: 1px solid var(--line);
+        }
+
+        th {
+            font-family: var(--font-mono);
+            font-size: 20px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--text-dim);
+        }
+
+        td {
+            color: var(--text-dim);
+        }
+
+        td.name {
+            color: #fff;
+            font-family: var(--font-display);
+            font-weight: 600;
+            font-size: 26px;
+        }
+
+        tr.ours td {
+            background: rgba(53, 224, 208, 0.06);
+        }
+
+        tr.ours td.name {
+            color: var(--cyan);
+        }
+
+        .chk {
+            color: var(--green);
+        }
+
+        .warn {
+            color: var(--amber);
+        }
+
+        .no {
+            color: var(--red);
+        }
+
+        .src {
+            font-family: var(--font-mono);
+            font-size: 22px;
+            color: var(--text-2);
+            margin-top: 26px;
+            letter-spacing: 0.03em;
+        }
+
+        /* pain checklist */
+        .pain {
+            list-style: none;
+            margin-top: 30px;
+        }
+
+        .pain li {
+            display: flex;
+            gap: 22px;
+            align-items: flex-start;
+            margin: 22px 0;
+            font-size: 30px;
+            line-height: 1.4;
+        }
+
+        .pain .box {
+            flex: 0 0 auto;
+            width: 40px;
+            height: 40px;
+            margin-top: 4px;
+            border-radius: 8px;
+            border: 2px solid var(--red);
+            position: relative;
+        }
+
+        .pain .box::after {
+            content: "✕";
+            position: absolute;
+            inset: 0;
+            display: grid;
+            place-items: center;
+            color: var(--red);
+            font-family: var(--font-mono);
+            font-size: 26px;
+        }
+
+        /* how-it-works flow diagram — big, static, back-row readable */
+        .flow {
+            display: flex;
+            align-items: stretch;
+            gap: 26px;
+            margin-top: 56px;
+        }
+
+        .fbox {
+            flex: 1;
+            border-radius: 20px;
+            padding: 34px 32px;
+            position: relative;
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.01));
+            border: 1px solid var(--line);
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .fbox.agent {
+            border-color: rgba(53, 224, 208, 0.45);
+            box-shadow: inset 0 0 0 1px rgba(53, 224, 208, 0.12), 0 20px 50px rgba(0, 0, 0, 0.4);
+        }
+
+        .fbox.door {
+            flex: 1.25;
+            border-color: rgba(185, 140, 255, 0.5);
+            box-shadow: inset 0 0 0 1px rgba(185, 140, 255, 0.16), 0 24px 60px rgba(0, 0, 0, 0.45);
+            background: linear-gradient(180deg, rgba(185, 140, 255, 0.08), rgba(255, 255, 255, 0.01));
+        }
+
+        .fbox.sites {
+            border-color: var(--line);
+        }
+
+        .fbadge {
+            font-family: var(--font-mono);
+            font-size: 20px;
+            color: var(--text-dim);
+            letter-spacing: 0.04em;
+        }
+
+        .fbadge .mono {
+            color: var(--text);
+        }
+
+        .ftitle {
+            font-family: var(--font-display);
+            font-weight: 600;
+            font-size: 38px;
+            color: #fff;
+            line-height: 1.05;
+        }
+
+        .ftags {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .ftag {
+            font-family: var(--font-mono);
+            font-size: 20px;
+            padding: 5px 14px;
+            border-radius: 999px;
+            border: 1px solid var(--line);
+        }
+
+        .ftag.no {
+            color: var(--red);
+            border-color: rgba(255, 107, 107, 0.5);
+        }
+
+        .fcarry {
+            font-size: 22px;
+            color: var(--text-dim);
+            margin-top: auto;
+        }
+
+        .fdoorsub {
+            font-size: 23px;
+            color: var(--text);
+            line-height: 1.4;
+        }
+
+        .fkey {
+            position: absolute;
+            top: 26px;
+            right: 30px;
+            font-size: 44px;
+            filter: drop-shadow(0 0 14px var(--violet-glow));
+        }
+
+        .fwire {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            min-width: 90px;
+        }
+
+        .fwire .farrow {
+            font-family: var(--font-mono);
+            font-size: 52px;
+            color: var(--cyan);
+            line-height: 1;
+        }
+
+        .fwire.split .farrow {
+            color: var(--violet);
+        }
+
+        .fwlabel {
+            font-family: var(--font-mono);
+            font-size: 18px;
+            color: var(--text-dim);
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+        }
+
+        .fsplit {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-top: 6px;
+        }
+
+        .ss {
+            font-family: var(--font-mono);
+            font-size: 22px;
+            padding: 8px 14px;
+            border-radius: 10px;
+        }
+
+        .ss.yes {
+            color: var(--green);
+            background: rgba(110, 231, 168, 0.10);
+            border: 1px solid rgba(110, 231, 168, 0.35);
+        }
+
+        .ss.no {
+            color: var(--red);
+            background: rgba(255, 107, 107, 0.08);
+            border: 1px solid rgba(255, 107, 107, 0.3);
+        }
+
+        /* threat-model two-column */
+        .tmcols {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 40px;
+            margin-top: 46px;
+        }
+
+        .tmcol {
+            border-radius: 20px;
+            padding: 40px 42px;
+            border: 1px solid var(--line);
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.008));
+        }
+
+        .tmcol.stop {
+            box-shadow: inset 0 0 0 1px rgba(110, 231, 168, 0.22);
+        }
+
+        .tmcol.limit {
+            box-shadow: inset 0 0 0 1px rgba(255, 107, 107, 0.22);
+        }
+
+        .tmhead {
+            font-family: var(--font-display);
+            font-weight: 600;
+            font-size: 34px;
+            color: #fff;
+            margin-bottom: 24px;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .tmmark {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            display: grid;
+            place-items: center;
+            font-family: var(--font-mono);
+            font-size: 24px;
+        }
+
+        .tmmark.ok {
+            color: var(--green);
+            border: 2px solid rgba(110, 231, 168, 0.6);
+        }
+
+        .tmmark.no {
+            color: var(--red);
+            border: 2px solid rgba(255, 107, 107, 0.6);
+        }
+
+        .tmcol ul {
+            list-style: none;
+        }
+
+        .tmcol li {
+            position: relative;
+            padding-left: 30px;
+            font-size: 24px;
+            line-height: 1.38;
+            color: var(--text-2);
+            margin: 16px 0;
+        }
+
+        .tmcol li::before {
+            content: "–";
+            position: absolute;
+            left: 0;
+            color: var(--text-dim);
+            font-family: var(--font-mono);
+        }
+
+        /* two-step machinery — .anno reveals at step 1; payoff lines swap */
+        .steppips {
+            position: absolute;
+            top: 40px;
+            right: 96px;
+            display: flex;
+            gap: 10px;
+            z-index: 5;
+        }
+
+        .steppips .pip {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            border: 1px solid var(--text-dim);
+            background: transparent;
+            transition: all 0.3s var(--ease);
+        }
+
+        .steppips .pip.on {
+            background: var(--cyan);
+            border-color: var(--cyan);
+            box-shadow: 0 0 12px var(--cyan-glow);
+        }
+
+        .stephint {
+            position: absolute;
+            top: 37px;
+            right: 140px;
+            font-family: var(--font-mono);
+            font-size: 20px;
+            color: var(--text-dim);
+            letter-spacing: 0.06em;
+            z-index: 5;
+            transition: opacity 0.3s;
+        }
+
+        .anno {
+            opacity: 0;
+            transition: opacity 0.55s var(--ease);
+        }
+
+        .slide[data-step1] .anno {
+            opacity: 1;
+        }
+
+        .fring {
+            font-family: var(--font-mono);
+            font-size: 19px;
+            color: var(--cyan);
+            border: 1px dashed rgba(53, 224, 208, 0.5);
+            border-radius: 10px;
+            padding: 6px 12px;
+        }
+
+        .ffeed {
+            position: absolute;
+            top: -34px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-family: var(--font-mono);
+            font-size: 20px;
+            color: var(--cyan);
+        }
+
+        .s9-land-1 {
+            display: none;
+            margin-top: 40px;
+            color: var(--text-2);
+        }
+
+        /* demo walk-through list */
+        ol.demo {
+            list-style: none;
+            margin-top: 52px;
+        }
+
+        ol.demo li {
+            display: flex;
+            gap: 26px;
+            align-items: flex-start;
+            margin: 28px 0;
+            font-size: 33px;
+            line-height: 1.42;
+            color: var(--text);
+        }
+
+        ol.demo .dn {
+            flex: 0 0 auto;
+            width: 52px;
+            height: 52px;
+            border-radius: 12px;
+            display: grid;
+            place-items: center;
+            font-family: var(--font-mono);
+            font-size: 26px;
+            color: var(--cyan);
+            border: 1px solid rgba(53, 224, 208, 0.5);
+            background: rgba(53, 224, 208, 0.08);
+        }
+
+        .slide[data-step1] .s9-land-0 {
+            display: none;
+        }
+
+        .slide[data-step1] .s9-land-1 {
+            display: block;
+        }
+
+        /* quote / statement slides */
+        .statement {
+            font-family: var(--font-display);
+            font-weight: 600;
+            font-size: 66px;
+            line-height: 1.12;
+            letter-spacing: -0.01em;
+            color: #fff;
+            max-width: 1500px;
+        }
+
+        .statement .cyan,
+        .statement .violet {
+            display: inline;
+        }
+
+        .attrib {
+            font-family: var(--font-mono);
+            font-size: 24px;
+            color: var(--text-dim);
+            margin-top: 40px;
+            letter-spacing: 0.1em;
+        }
+
+        /* title slide specifics */
+        .title-slide .layer {
+            justify-content: center;
+        }
+
+        .title-slide h1 {
+            font-size: 168px;
+        }
+
+        .title-slide .tagline {
+            font-family: var(--font-display);
+            font-weight: 600;
+            font-size: 58px;
+            color: var(--cyan);
+            margin-top: 12px;
+        }
+
+        .title-slide .sub {
+            font-family: var(--font-mono);
+            font-size: 26px;
+            color: var(--text-dim);
+            margin-top: 44px;
+            letter-spacing: 0.14em;
+        }
+
+        .glowbar {
+            width: 260px;
+            height: 6px;
+            border-radius: 3px;
+            background: linear-gradient(90deg, var(--cyan), var(--violet));
+            box-shadow: 0 0 30px var(--cyan-glow);
+            margin: 40px 0;
+        }
+
+        /* two pillar big cards */
+        .pillars {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 48px;
+            margin-top: 40px;
+        }
+
+        .pillar {
+            border: 1px solid var(--line);
+            border-radius: 24px;
+            padding: 48px 50px;
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.006));
+        }
+
+        .pillar.p1 {
+            box-shadow: inset 0 0 0 1px rgba(185, 140, 255, 0.18);
+        }
+
+        .pillar.p2 {
+            box-shadow: inset 0 0 0 1px rgba(53, 224, 208, 0.18);
+        }
+
+        .pillar h3 {
+            font-size: 44px;
+            margin: 24px 0 18px;
+            color: #fff;
+        }
+
+        .pillar p {
+            font-size: 28px;
+            color: var(--text-2);
+            line-height: 1.42;
+        }
+
+        .pillar .status {
+            font-family: var(--font-mono);
+            font-size: 24px;
+            margin-top: 26px;
+            display: block;
+        }
+
+        /* honest arrows layout for "where each wins" */
+        .wins li {
+            margin: 24px 0;
+            font-size: 28px;
+            line-height: 1.42;
+            list-style: none;
+        }
+
+        .wins li b {
+            color: #fff;
+        }
+
+        .wins {
+            margin-top: 28px;
+        }
+
+        .wins li::before {
+            content: "▸ ";
+            color: var(--cyan);
+            font-family: var(--font-mono);
+        }
+
+        /* plugin catalog — grouped capability chips (extensible-by-design slide) */
+        .plugwrap {
+            margin-top: 30px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .plugrow {
+            display: flex;
+            align-items: baseline;
+            gap: 20px;
+        }
+
+        .plugcat {
+            flex: 0 0 250px;
+            text-align: right;
+            font-family: var(--font-mono);
+            font-size: 20px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--text-dim);
+        }
+
+        .plugchips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .chip {
+            font-family: var(--font-mono);
+            font-size: 21px;
+            padding: 6px 15px;
+            border-radius: 999px;
+            border: 1px solid var(--line);
+            color: var(--text-2);
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .chip.byo {
+            border-color: var(--cyan);
+            border-style: dashed;
+            color: var(--cyan);
+            background: rgba(53, 224, 208, 0.07);
+        }
+
+        /* ===========================================
+   ENTRANCE ANIMATIONS (triggered by .visible)
+   =========================================== */
+        .reveal {
+            opacity: 0;
+            transform: translateY(34px);
+            transition: opacity var(--dur) var(--ease), transform var(--dur) var(--ease);
+        }
+
+        .slide.visible .reveal {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .reveal-blur {
+            opacity: 0;
+            filter: blur(14px);
+            transition: opacity 0.9s var(--ease), filter 0.9s var(--ease);
+        }
+
+        .slide.visible .reveal-blur {
+            opacity: 1;
+            filter: blur(0);
+        }
+
+        .slide.visible .d1 {
+            transition-delay: 0.08s;
+        }
+
+        .slide.visible .d2 {
+            transition-delay: 0.20s;
+        }
+
+        .slide.visible .d3 {
+            transition-delay: 0.32s;
+        }
+
+        .slide.visible .d4 {
+            transition-delay: 0.44s;
+        }
+
+        .slide.visible .d5 {
+            transition-delay: 0.56s;
+        }
+
+        .slide.visible .d6 {
+            transition-delay: 0.68s;
+        }
+
+        .slide.visible .d7 {
+            transition-delay: 0.80s;
+        }
+
+        .slide.visible .d8 {
+            transition-delay: 0.92s;
+        }
+
+        /* progress bar chrome (outside stage) */
+        .progress {
+            position: fixed;
+            left: 0;
+            top: 0;
+            height: 4px;
+            background: linear-gradient(90deg, var(--cyan), var(--violet));
+            z-index: 1000;
+            transition: width 0.4s var(--ease);
+            box-shadow: 0 0 16px var(--cyan-glow);
+        }
+
+        /* edit affordance */
+        .edit-hotzone {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 80px;
+            height: 80px;
+            z-index: 10000;
+            cursor: pointer;
+        }
+
+        .edit-toggle {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            z-index: 10001;
+            width: 52px;
+            height: 52px;
+            border-radius: 12px;
+            border: 1px solid var(--line);
+            background: var(--panel);
+            color: var(--text);
+            font-size: 22px;
+            cursor: pointer;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+
+        .edit-toggle.show,
+        .edit-toggle.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .edit-toggle.active {
+            border-color: var(--cyan);
+            color: var(--cyan);
+            box-shadow: 0 0 18px var(--cyan-glow);
+        }
+
+        [contenteditable="true"] {
+            outline: 2px dashed var(--cyan);
+            outline-offset: 6px;
+            border-radius: 6px;
+            cursor: text;
+        }
+
+        .edit-banner {
+            position: fixed;
+            top: 22px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 10001;
+            font-family: var(--font-mono);
+            font-size: 17px;
+            color: var(--cyan);
+            background: var(--panel);
+            border: 1px solid var(--cyan);
+            padding: 8px 18px;
+            border-radius: 999px;
+            display: none;
+        }
+
+        .edit-banner.show {
+            display: block;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="progress" id="progress"></div>
+    <div class="edit-hotzone"></div>
+    <button class="edit-toggle" id="editToggle" title="Edit mode (E)">✎</button>
+    <div class="edit-banner" id="editBanner">EDIT MODE · click any text · Ctrl+S to save</div>
+
+    <div class="deck-viewport">
+        <main class="deck-stage" id="deckStage">
+
+            <!-- === SLIDE 1 · TITLE === -->
+            <section class="slide title-slide active">
+                <div class="layer">
+                    <div class="kicker reveal d1"><span class="dot"></span> payfazz / ai-core · agent-sandbox v2</div>
+                    <h1 class="reveal-blur d2" style="margin-top:26px;">agent&#8209;sandbox</h1>
+                    <div class="glowbar reveal d3"></div>
+                    <div class="tagline reveal d4">Use agents <span class="cyan">safely</span> and <span
+                            class="violet">freely</span>.</div>
+                    <div class="sub reveal d5">A sandbox for the way our team actually works — Corey</div>
+                </div>
+                <div class="brandmark">◇ secure enclosure</div>
+            </section>
+
+            <!-- === SLIDE 2 · WHERE WE'RE COMING FROM === -->
+            <section class="slide">
+                <div class="layer">
+                    <div class="kicker reveal d1"><span class="dot"></span> where we're coming from</div>
+                    <div class="spacer" style="max-height:60px"></div>
+                    <h2 class="reveal d2">I built <span class="cyan">one</span> harness<br>for the whole team.</h2>
+                    <p class="reveal d3 dim mt-m" style="max-width:1350px;">So everyone could use <em
+                            class="violet">"what I think is the best"</em> workflow for software development.</p>
+                    <div class="statement reveal d4 mt-l" style="font-size:76px;">I was <span class="red">wrong.</span>
+                    </div>
+                    <p class="reveal d5 dim mt-m" style="max-width:1350px;">What <strong>I</strong> think is best isn't
+                        automatically best for a teammate.</p>
+                    <div class="spacer"></div>
+                </div>
+                <div class="brandmark">◇ agent-sandbox</div>
+                <div class="slide-num">02</div>
+            </section>
+
+            <!-- === SLIDE 3 · NOBODY IS WRONG === -->
+            <section class="slide">
+                <div class="layer">
+                    <div class="kicker reveal d1"><span class="dot"></span> nobody is wrong</div>
+                    <table class="reveal d2" style="margin-top:56px; font-size:30px;">
+                        <thead>
+                            <tr>
+                                <th style="width:50%">I do this</th>
+                                <th>A teammate prefers</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td class="name">Fresh <span class="cyan">worktree</span> per task</td>
+                                <td>Pre-created worktrees, reused</td>
+                            </tr>
+                            <tr>
+                                <td class="name">Drive tasks over <span class="cyan">Telegram</span></td>
+                                <td>A <span class="violet">TUI</span> coding agent, directly</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <div class="statement reveal d3 mt-l" style="font-size:60px;">Who's right? <span
+                            class="cyan">Nobody.</span></div>
+                    <p class="reveal d4 mt-m" style="max-width:1350px; font-size:34px;">As long as the end result is
+                        good — <strong>they're</strong> right.</p>
+                    <div class="spacer"></div>
+                </div>
+                <div class="brandmark">◇ agent-sandbox</div>
+                <div class="slide-num">03</div>
+            </section>
+
+            <!-- === SLIDE 4 · THE SHIFT === -->
+            <section class="slide">
+                <div class="layer">
+                    <div class="kicker reveal d1"><span class="dot"></span> the shift</div>
+                    <div class="spacer" style="max-height:40px"></div>
+                    <h2 class="reveal d2">Stop prescribing workflow.<br>Start giving <span class="cyan">freedom.</span>
+                    </h2>
+                    <ul class="big">
+                        <li class="reveal d3">Explore your <strong>own</strong> productivity</li>
+                        <li class="reveal d4">Build what fits <strong>yourself</strong></li>
+                        <li class="reveal d5">Try new tools <strong>without asking permission first</strong></li>
+                    </ul>
+                    <div class="spacer"></div>
+                </div>
+                <div class="brandmark">◇ agent-sandbox</div>
+                <div class="slide-num">04</div>
+            </section>
+
+            <!-- === SLIDE 5 · THE VISION === -->
+            <section class="slide center">
+                <div class="layer center">
+                    <div class="kicker reveal d1"><span class="dot"></span> the vision</div>
+                    <div class="statement reveal-blur d2 mt-l" style="text-align:center;">
+                        Make our team's <span class="cyan">agentic development</span> better —
+                        so we use agents safely and freely, and what they produce is
+                        <span class="violet">verifiable, and where possible, visualized.</span>
+                    </div>
+                    <p class="reveal d4 dim mt-l">Two pillars carry that vision.</p>
+                </div>
+                <div class="slide-num">05</div>
+            </section>
+
+            <!-- === SLIDE 6 · TWO PILLARS === -->
+            <section class="slide">
+                <div class="layer">
+                    <div class="kicker reveal d1"><span class="dot"></span> two pillars · our agentic-dev vision</div>
+                    <div class="pillars">
+                        <div class="pillar p1 reveal d2">
+                            <span class="pill violet">Pillar 1</span>
+                            <h3>Verify + Visualize the work</h3>
+                            <p>Prove what the agent produced is correct — and <em class="violet">show</em> that proof.
+                            </p>
+                            <span class="status red">→ Direction / roadmap. No code yet.</span>
+                        </div>
+                        <div class="pillar p2 reveal d3">
+                            <span class="pill">Pillar 2</span>
+                            <h3>Contain the agent safely</h3>
+                            <p>Give freedom a floor: run any agent without risking your secrets or machine.</p>
+                            <span class="status green">→ We tackle this with <strong>agent-sandbox</strong>
+                                (shipped).</span>
+                        </div>
+                    </div>
+                    <p class="reveal d4 mt-l" style="font-size:30px;">Today: <strong>how we tackle Pillar 2 — with
+                            agent-sandbox.</strong> Pillar 1 is where we're heading — <span class="cyan">help shape
+                            it.</span></p>
+                </div>
+                <div class="brandmark">◇ agent-sandbox</div>
+                <div class="slide-num">06</div>
+            </section>
+
+            <!-- === SLIDE 7 · THE PAIN === -->
+            <section class="slide">
+                <div class="layer">
+                    <div class="kicker reveal d1"><span class="dot"></span> do you recognize this pain?</div>
+                    <ul class="pain">
+                        <li class="reveal d2"><span class="box"></span><span>You either let it
+                                <strong>auto-approve</strong> everything (<code>--dangerously-skip-permissions</code>,
+                                auto mode) — or the <strong>approval prompts never stop</strong>. No comfortable
+                                middle.</span></li>
+                        <li class="reveal d3"><span class="box"></span><span>Your agent can read your <code>.env</code>,
+                                your <code>~/.ssh</code> private keys, your <strong>OAuth token</strong> folders.</span>
+                        </li>
+                        <li class="reveal d4"><span class="box"></span><span>You're tired of
+                                hand-<strong>whitelisting</strong> every single permission.</span></li>
+                        <li class="reveal d5"><span class="box"></span><span>You found a cool agent — <span
+                                    class="violet">oh-my-pi, prime-agent</span> — but gave up because approval was too
+                                much friction.</span></li>
+                    </ul>
+                    <p class="reveal d6 mt-l" style="font-size:34px;"><span class="cyan">agent-sandbox</span> makes
+                        those headaches manageable.</p>
+                </div>
+                <div class="brandmark">◇ agent-sandbox</div>
+                <div class="slide-num">07</div>
+            </section>
+
+            <!-- === SLIDE 8 · WHAT IT IS === -->
+            <section class="slide">
+                <div class="layer">
+                    <div class="kicker reveal d1"><span class="dot"></span> what it is</div>
+                    <p class="reveal d2 mt-m" style="font-size:36px;">One <code>config.yaml</code> &nbsp;→&nbsp;
+                        <strong>two containers.</strong></p>
+                    <div class="cols">
+                        <div class="card reveal d3">
+                            <h3>🤖 agent</h3>
+                            <p>Untrusted · <strong>non-root</strong> · network-isolated · holds <strong>zero
+                                    secrets</strong>.</p>
+                            <span class="tag cyan">the box</span>
+                        </div>
+                        <div class="card violet reveal d4">
+                            <h3>🛡️ gateway</h3>
+                            <p>Trusted · holds all secrets · the <strong>only</strong> way out.</p>
+                            <span class="tag violet">the wall</span>
+                        </div>
+                    </div>
+                    <p class="reveal d5 mt-l dim" style="max-width:1500px; font-size:30px;">Isolation is <span
+                            class="cyan">structural</span>, not "we trust it to behave." The agent <strong>physically
+                            cannot</strong> read a secret — secrets never enter its container.</p>
+                </div>
+                <div class="brandmark">◇ agent-sandbox</div>
+                <div class="slide-num">08</div>
+            </section>
+
+            <!-- === SLIDE 9 · HOW IT WORKS (two steps: concept → concrete) === -->
+            <section class="slide" data-steps="2">
+                <div class="layer">
+                    <div class="kicker reveal d1"><span class="dot"></span> how it works · two boxes, one guarded door
+                    </div>
+                    <div class="steppips"><span class="pip on"></span><span class="pip"></span></div>
+                    <div class="flow reveal-scale d2">
+                        <!-- AGENT BOX -->
+                        <div class="fbox agent">
+                            <div class="fbadge">🤖 container · <span class="mono">agent</span></div>
+                            <div class="fring anno">internal network · no route to the internet</div>
+                            <div class="ftitle">Runs your code</div>
+                            <div class="ftags"><span class="ftag no">no keys</span><span class="ftag no">no
+                                    internet</span></div>
+                            <div class="fcarry">carries only <span class="vi mono">${{secrets.X}}</span></div>
+                        </div>
+                        <!-- WIRE 1 -->
+                        <div class="fwire"><span class="fwlabel">request</span><span class="farrow">→</span></div>
+                        <!-- GATEWAY DOOR -->
+                        <div class="fbox door">
+                            <div class="ffeed anno">.env ↓</div>
+                            <div class="fbadge">🛡️ container · <span class="mono">gateway</span></div>
+                            <div class="fkey">🔑</div>
+                            <div class="ftitle">The guarded door</div>
+                            <div class="fdoorsub">the only way out · holds the keys + <span class="cy mono">.env</span>
+                                · checks every request · swaps the token for the <span class="cy">real key</span> at the
+                                socket write</div>
+                        </div>
+                        <!-- WIRE 2 (split) -->
+                        <div class="fwire split"><span class="farrow">→</span></div>
+                        <!-- SITES -->
+                        <div class="fbox sites">
+                            <div class="ftitle" style="font-size:32px;">Out there</div>
+                            <div class="fsplit"><span class="ss yes">✓ forward — allowed host</span><span
+                                    class="ss no">✗ 403 — everything else</span></div>
+                        </div>
+                    </div>
+                    <!-- STEP 0 payoff → swapped for STEP 1 boundary line -->
+                    <p class="s9-land-0 reveal d4 mt-l"
+                        style="font-size:34px; max-width:1620px; font-family:var(--font-display); font-weight:600; color:#fff;">
+                        It isn't a rule the agent could talk its way around — it <span class="cyan">physically
+                            can't</span> reach your keys.</p>
+                    <p class="s9-land-1" style="font-size:29px; max-width:1660px;">The trust boundary is the
+                        <strong>network itself</strong>, not a setting — the agent has <span class="red">no path to the
+                            internet</span>, and the gateway is the <span class="cyan">only bridge out</span>. Default
+                        is <strong>deny if no hosts whitelisted</strong>; the real key is revealed at
+                        <strong>one</strong> place — the socket write, inside the door. <strong>Fail-closed
+                            everywhere.</strong></p>
+                </div>
+                <div class="brandmark">◇ agent-sandbox</div>
+                <div class="slide-num">09</div>
+            </section>
+
+            <!-- === SLIDE 9B · THREAT MODEL (for the security team) === -->
+            <section class="slide">
+                <div class="layer">
+                    <div class="kicker reveal d1"><span class="dot"></span> the honest boundary · threat model</div>
+                    <div class="tmcols">
+                        <div class="tmcol stop reveal d2">
+                            <div class="tmhead"><span class="tmmark ok">✓</span> What this <span
+                                    class="cyan">stops</span></div>
+                            <ul>
+                                <li>Agent reading a secret — keys never enter its container</li>
+                                <li>Key exfiltration — agent has <strong>no route</strong> to the internet</li>
+                                <li>Rogue egress — <strong>default-deny</strong>; only hosts you allow</li>
+                                <li>Prompt-talking its way past a rule — the boundary is the <strong>network</strong>,
+                                    not a setting</li>
+                            </ul>
+                        </div>
+                        <div class="tmcol limit reveal d3">
+                            <div class="tmhead"><span class="tmmark no">!</span> What it does <span
+                                    class="red">not</span> (yet)</div>
+                            <ul>
+                                <li>Secret-at-rest: the gateway holds <code>.env</code> in <strong>plaintext</strong> —
+                                    a host-read threat, not an agent one</li>
+                                <li>A compromised gateway = game over (it holds the keys by design)</li>
+                                <li>CLI supply chain — trust is <code>builtin://</code> / <code>local://</code>, both
+                                    code-reviewed</li>
+                                <li>Docker-only cap posture verified; podman + read-only rootfs pending</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <p class="reveal d4 mt-l" style="font-size:27px; max-width:1640px;">The core guarantee is <span
+                            class="cyan">structural agent isolation</span>. The rest is defense-in-depth we're honest
+                        about — all tracked in <code>docs/architecture/known-debt.md</code>.</p>
+                </div>
+                <div class="brandmark">◇ agent-sandbox</div>
+                <div class="slide-num">10</div>
+            </section>
+
+            <!-- === SLIDE 10 · SETUP === -->
+            <section class="slide">
+                <div class="layer">
+                    <div class="kicker reveal d1"><span class="dot"></span> how to set it up</div>
+                    <pre class="reveal d2" style="margin-top:40px;"><span class="cmt"># 1 · scaffold config via an interactive wizard</span>
+<span class="cy">agent-sandbox</span> init
+
+<span class="cmt"># 2 · provide secrets: copy the example and fill it in</span>
+cp .agent-sandbox/.env.example .env && <span class="cy">$EDITOR</span> .env
+
+<span class="cmt"># 3 · review the generated config</span>
+<span class="cy">$EDITOR</span> .agent-sandbox/config.yaml
+
+<span class="cmt"># 4 · generate artifacts, build &amp; start the sandbox</span>
+<span class="cy">agent-sandbox</span> run up
+
+<span class="cmt"># 5 · use the container shell</span>
+<span class="cy">agent-sandbox</span> run shell</pre>
+                </div>
+                <div class="brandmark">◇ agent-sandbox</div>
+                <div class="slide-num">11</div>
+            </section>
+
+            <!-- === SLIDE 11 · DEMO === -->
+            <section class="slide center">
+                <div class="layer center">
+                    <div class="pill reveal d1">live demo</div>
+                    <h1 class="reveal-blur d2" style="font-size:150px; margin-top:24px;">Demo</h1>
+                    <p class="reveal d3"
+                        style="margin-top:28px; font-size:34px; color:var(--text-2); max-width:1180px;">Every guarantee
+                        you're about to see is <span class="cyan">one capability plugin</span> in <code
+                            style="font-family:var(--font-mono); color:var(--text);">config.yaml</code> — egress, OAuth,
+                        secrets. Composed, not hand&#8209;wired.</p>
+                </div>
+                <div class="slide-num">12</div>
+            </section>
+
+            <!-- === SLIDE 12 · ALTERNATIVES TABLE === -->
+            <section class="slide">
+                <div class="layer">
+                    <div class="kicker reveal d1"><span class="dot"></span> alternatives you may want to consider</div>
+                    <table class="reveal d2" style="font-size:21px;">
+                        <thead>
+                            <tr>
+                                <th style="width:15%"></th>
+                                <th>Isolation</th>
+                                <th>Secret model</th>
+                                <th>Egress</th>
+                                <th>Setup</th>
+                                <th>Maturity</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr class="ours">
+                                <td class="name">agent-sandbox</td>
+                                <td>container, non-root</td>
+                                <td class="chk">agent never holds secrets</td>
+                                <td class="chk">default-deny MITM gateway</td>
+                                <td>wizard + <span class="cy">agent-driven</span> <sup>1</sup></td>
+                                <td>pre-1.0</td>
+                            </tr>
+                            <tr>
+                                <td class="name">Docker Sandboxes <span class="mono chrome">(sbx)</span></td>
+                                <td class="chk">microVM (own kernel)</td>
+                                <td>host proxy injects; agent sees sentinel</td>
+                                <td>deny-by-default host proxy</td>
+                                <td class="chk">2 commands</td>
+                                <td class="warn">pre-1.0, parts experimental</td>
+                            </tr>
+                            <tr>
+                                <td class="name">K8s agent-sandbox</td>
+                                <td class="chk">pod + gVisor/Kata</td>
+                                <td class="no">you wire secrets yourself</td>
+                                <td class="warn">K8s NetworkPolicy (you build it)</td>
+                                <td class="no">cluster + CRDs</td>
+                                <td class="warn">alpha</td>
+                            </tr>
+                            <tr>
+                                <td class="name">NVIDIA OpenShell</td>
+                                <td>container + Landlock/seccomp</td>
+                                <td class="no">env-var providers — agent holds real creds</td>
+                                <td>policy engine (allow/deny/reroute)</td>
+                                <td class="chk">2 commands</td>
+                                <td>shipped, young</td>
+                            </tr>
+                            <tr>
+                                <td class="name">AgentCage</td>
+                                <td class="chk">Podman / Lima / Apple VM</td>
+                                <td class="chk">placeholders, proxy swaps</td>
+                                <td class="chk">transparent MITM + allowlist</td>
+                                <td class="chk">2 commands</td>
+                                <td>shipped, young</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <p class="reveal d3"
+                        style="margin-top:28px; font-size:24px; max-width:1700px; color:var(--text-2);">Everyone's happy
+                        path is ~2 commands — <strong>ours too</strong>. The difference is <strong>depth</strong>:
+                        others make you hand-write config to go deep; ours stays <span class="cyan">customizable without
+                            the cliff</span> — agent-driven config wires it. <span class="chrome"
+                            style="font-size:20px;"><sup>1</sup> plus a one-time org auth (GitHub Packages +
+                            PAT).</span></p>
+                </div>
+                <div class="brandmark">◇ agent-sandbox</div>
+                <div class="slide-num">13</div>
+            </section>
+
+            <!-- === SLIDE 13 · OUR EDGE + PLUGIN CATALOG (extensible by design) === -->
+            <section class="slide">
+                <div class="layer">
+                    <div class="kicker reveal d1"><span class="dot"></span> our edge · extensible by design</div>
+                    <h2 class="reveal d2" style="font-size:60px; margin-top:22px;">Security is <span
+                            class="cyan">composed</span>, not hand-wired.</h2>
+                    <p class="reveal d3" style="font-size:31px; max-width:1660px; margin-top:18px;">Every capability is
+                        a <strong>plugin you switch on in <code>config.yaml</code></strong> — <span
+                            class="cyan">agent-driven</span> (ask your coding agent, it wires it), builtin-only + <span
+                            class="cyan">code-reviewed</span>, checked at generate time. <strong>20 shipped
+                            today:</strong></p>
+                    <div class="plugwrap reveal d4">
+                        <div class="plugrow"><span class="plugcat">languages</span><span class="plugchips"><span
+                                    class="chip">node</span><span class="chip">python</span><span
+                                    class="chip">go</span><span class="chip">ruby</span></span></div>
+                        <div class="plugrow"><span class="plugcat">coding agents</span><span class="plugchips"><span
+                                    class="chip">claude-code</span><span class="chip">codex</span><span
+                                    class="chip">dsh</span><span class="chip">pi</span><span
+                                    class="chip">deepsec</span></span></div>
+                        <div class="plugrow"><span class="plugcat">secrets &amp; access</span><span
+                                class="plugchips"><span class="chip">oauth</span><span
+                                    class="chip">github-pat</span><span class="chip">ssh</span></span></div>
+                        <div class="plugrow"><span class="plugcat">network &amp; egress</span><span
+                                class="plugchips"><span class="chip">agw gateway</span><span
+                                    class="chip">vpn</span><span class="chip">docker-bridge</span></span></div>
+                        <div class="plugrow"><span class="plugcat">runtime &amp; lifecycle</span><span
+                                class="plugchips"><span class="chip">docker-in-box</span><span
+                                    class="chip">home-volume</span><span class="chip">sync-back</span><span
+                                    class="chip">shell</span><span class="chip">base</span></span></div>
+                        <div class="plugrow"><span class="plugcat">extend</span><span class="plugchips"><span
+                                    class="chip byo">+ bring your own · local://</span></span></div>
+                    </div>
+                    <p class="reveal d5 mt-l" style="font-size:26px; max-width:1680px; color:var(--text-2);">
+                        <strong>Honest bit:</strong> AgentCage is the closest — extensible too, via custom-inspector
+                        <em>code</em>. Ours composes in <em>config</em>, and your coding agent wires it. If sbx or K8s
+                        fits you better, that's fine — the vision is <span class="cyan">freedom, not lock-in</span>.</p>
+                </div>
+                <div class="brandmark">◇ agent-sandbox</div>
+                <div class="slide-num">14</div>
+            </section>
+
+            <!-- === SLIDE 14 · NOT PERFECT (by-design vs roadmap) === -->
+            <section class="slide">
+                <div class="layer">
+                    <div class="kicker reveal d1"><span class="dot"></span> it's not perfect yet</div>
+                    <h2 class="reveal d2" style="font-size:52px; margin-top:20px;">Some limits are the <span
+                            class="cyan">price of the isolation.</span> Some just aren't <span class="violet">done
+                            yet.</span></h2>
+                    <div class="tmcols">
+                        <div class="tmcol stop reveal d3">
+                            <div class="tmhead"><span class="tmmark ok">◧</span> By design — the price of isolation
+                            </div>
+                            <ul>
+                                <li><strong>No sharing a host folder.</strong> It would punch a hole in the isolation,
+                                    so the checks reject it — edit inside the box (git, VS Code, code-server, file
+                                    view).</li>
+                                <li><strong>Apps that need a screen.</strong> The usual display wiring is exactly what
+                                    the checks refuse — planned fix: a desktop inside the box over a controlled
+                                    connection.</li>
+                                <li><strong>Secret-at-rest on the gateway is plaintext.</strong> A host-read threat, not
+                                    an agent one — encryption is a separate key-management decision.</li>
+                            </ul>
+                        </div>
+                        <div class="tmcol limit reveal d4">
+                            <div class="tmhead"><span class="tmmark no">◫</span> Not done yet — on the roadmap</div>
+                            <ul>
+                                <li><strong>Pillar 1 (verify + visualize)</strong> — direction only, no code yet.</li>
+                                <li><strong>Docker inside the box.</strong> Worked in v1; v2 mostly ported, not fully
+                                    wired/tested.</li>
+                                <li><strong>Smoother agent login</strong> for some tools; read-only rootfs + podman
+                                    cap-posture.</li>
+                                <li><strong>Install</strong> needs payfazz org access + a one-time classic PAT; pre-1.0,
+                                    a minor bump may break.</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <p class="reveal d5 mt-m" style="font-size:27px;">Naming the limits plainly is what makes the hard
+                        claims credible. We want your <span class="cyan">feedback</span> and your <span
+                            class="violet">contributions.</span></p>
+                </div>
+                <div class="brandmark">◇ agent-sandbox</div>
+                <div class="slide-num">15</div>
+            </section>
+
+            <!-- === SLIDE 15 · CLOSING === -->
+            <section class="slide center">
+                <div class="layer center">
+                    <div class="kicker reveal d1" style="justify-content:center;"><span class="dot"></span> closing
+                    </div>
+                    <div class="statement reveal-blur d2 mt-l" style="text-align:center; font-size:74px;">
+                        Pick <span class="cyan">your own</span> workflow.<br>
+                        Run agents <span class="violet">without fear.</span><br>
+                        Help us build <span class="cyan">agent-sandbox.</span>
+                    </div>
+                    <p class="reveal d4 chrome mt-l mono" style="font-size:24px; letter-spacing:0.1em;">agent-sandbox ·
+                        payfazz/ai-core → agent-sandbox/v2</p>
+                </div>
+                <div class="slide-num">16</div>
+            </section>
+
+            <!-- === SLIDE 17 · Q&A === -->
+            <section class="slide center">
+                <div class="layer center">
+                    <div class="glowbar reveal d1" style="margin:0 auto 40px;"></div>
+                    <h1 class="reveal-blur d2" style="font-size:180px;">Q &amp; A</h1>
+                    <p class="reveal d3 chrome mt-m mono" style="font-size:26px; letter-spacing:0.1em;">Ask us anything
+                    </p>
+                </div>
+                <div class="brandmark">◇ agent-sandbox</div>
+            </section>
+
+        </main>
+    </div>
+
+    <script>
+        /* ===========================================
+           SLIDE PRESENTATION CONTROLLER
+           Fixed 1920×1080 stage, uniform scale to viewport.
+           Nav: arrows / space / pgup-dn / swipe / wheel.
+           =========================================== */
+        class SlidePresentation {
+            constructor() {
+                this.slides = Array.from(document.querySelectorAll('.slide'));
+                this.current = 0;
+                this.step = 0;
+                this.stage = document.getElementById('deckStage');
+                this.progress = document.getElementById('progress');
+                this.setupStageScale();
+                this.setupKeyboardNav();
+                this.setupTouchNav();
+                this.setupWheelNav();
+                this.show(0);
+            }
+            setupStageScale() {
+                const scale = () => {
+                    const f = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+                    const x = (window.innerWidth - 1920 * f) / 2;
+                    const y = (window.innerHeight - 1080 * f) / 2;
+                    this.stage.style.transform = `translate(${x}px, ${y}px) scale(${f})`;
+                };
+                scale();
+                window.addEventListener('resize', scale);
+            }
+            setupKeyboardNav() {
+                document.addEventListener('keydown', (e) => {
+                    if (e.target.getAttribute && e.target.getAttribute('contenteditable') === 'true') return;
+                    if (['ArrowRight', 'ArrowDown', ' ', 'PageDown'].includes(e.key)) { e.preventDefault(); this.next(); }
+                    else if (['ArrowLeft', 'ArrowUp', 'PageUp'].includes(e.key)) { e.preventDefault(); this.prev(); }
+                    else if (e.key === 'Home') { this.show(0); }
+                    else if (e.key === 'End') { this.show(this.slides.length - 1); }
+                });
+            }
+            setupTouchNav() {
+                let x0 = null;
+                window.addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; }, { passive: true });
+                window.addEventListener('touchend', (e) => {
+                    if (x0 === null) return;
+                    const dx = e.changedTouches[0].clientX - x0;
+                    if (Math.abs(dx) > 60) { dx < 0 ? this.next() : this.prev(); }
+                    x0 = null;
+                }, { passive: true });
+            }
+            setupWheelNav() {
+                let lock = false;
+                window.addEventListener('wheel', (e) => {
+                    if (lock) return;
+                    if (Math.abs(e.deltaY) < 24) return;
+                    lock = true;
+                    e.deltaY > 0 ? this.next() : this.prev();
+                    setTimeout(() => lock = false, 700);
+                }, { passive: true });
+            }
+            next() {
+                if (this.step < this.stepCount() - 1) { this.step++; this.applyStep(); return; }
+                this.show(this.current + 1);
+            }
+            prev() {
+                if (this.step > 0) { this.step--; this.applyStep(); return; }
+                this.show(this.current - 1);
+            }
+            stepCount() {
+                const s = this.slides[this.current];
+                return s && s.dataset.steps ? parseInt(s.dataset.steps, 10) : 1;
+            }
+            applyStep() {
+                const s = this.slides[this.current];
+                if (!s) return;
+                if (this.step >= 1) s.setAttribute('data-step1', ''); else s.removeAttribute('data-step1');
+                s.querySelectorAll('.steppips .pip').forEach((p, k) => p.classList.toggle('on', k <= this.step));
+                const hint = s.querySelector('.stephint');
+                if (hint) hint.style.opacity = (this.step < this.stepCount() - 1) ? '1' : '0';
+            }
+            show(i) {
+                this.current = Math.max(0, Math.min(i, this.slides.length - 1));
+                this.step = 0;
+                this.slides.forEach((s, k) => {
+                    s.classList.toggle('active', k === this.current);
+                    s.classList.toggle('visible', k === this.current);
+                    if (k !== this.current) { s.removeAttribute('data-step1'); s.querySelectorAll('.steppips .pip').forEach((p, j) => p.classList.toggle('on', j === 0)); }
+                });
+                this.applyStep();
+                this.progress.style.width = ((this.current + 1) / this.slides.length * 100) + '%';
+            }
+        }
+        const deck = new SlidePresentation();
+
+        /* ===========================================
+           INLINE EDITING (JS hover with grace period)
+           =========================================== */
+        class InlineEditor {
+            constructor() {
+                this.isActive = false;
+                this.banner = document.getElementById('editBanner');
+                this.toggle = document.getElementById('editToggle');
+                this.editables = document.querySelectorAll('h1,h2,h3,p,li,td,th,.tagline,.statement,.diagram,pre');
+                this.load();
+            }
+            toggleEditMode() {
+                this.isActive = !this.isActive;
+                this.toggle.classList.toggle('active', this.isActive);
+                this.banner.classList.toggle('show', this.isActive);
+                this.editables.forEach(el => el.setAttribute('contenteditable', this.isActive ? 'true' : 'false'));
+            }
+            save() {
+                const data = {};
+                this.editables.forEach((el, i) => data[i] = el.innerHTML);
+                localStorage.setItem('agent-sandbox-deck', JSON.stringify(data));
+                this.banner.textContent = 'SAVED ✓'; setTimeout(() => this.banner.textContent = 'EDIT MODE · click any text · Ctrl+S to save', 1200);
+            }
+            load() {
+                const raw = localStorage.getItem('agent-sandbox-deck');
+                if (!raw) return;
+                try { const d = JSON.parse(raw); this.editables.forEach((el, i) => { if (d[i] !== undefined) el.innerHTML = d[i]; }); } catch (e) { }
+            }
+        }
+        const editor = new InlineEditor();
+
+        const hotzone = document.querySelector('.edit-hotzone');
+        const editToggle = document.getElementById('editToggle');
+        let hideTimeout = null;
+        hotzone.addEventListener('mouseenter', () => { clearTimeout(hideTimeout); editToggle.classList.add('show'); });
+        hotzone.addEventListener('mouseleave', () => { hideTimeout = setTimeout(() => { if (!editor.isActive) editToggle.classList.remove('show'); }, 400); });
+        editToggle.addEventListener('mouseenter', () => clearTimeout(hideTimeout));
+        editToggle.addEventListener('mouseleave', () => { hideTimeout = setTimeout(() => { if (!editor.isActive) editToggle.classList.remove('show'); }, 400); });
+        editToggle.addEventListener('click', () => editor.toggleEditMode());
+        hotzone.addEventListener('click', () => editor.toggleEditMode());
+        document.addEventListener('keydown', (e) => {
+            if ((e.key === 'e' || e.key === 'E') && e.target.getAttribute && e.target.getAttribute('contenteditable') !== 'true') editor.toggleEditMode();
+            if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); editor.save(); }
+        });
+    </script>
+</body>
+
+</html>
